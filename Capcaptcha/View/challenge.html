@@ -1,0 +1,191 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="robots" content="noindex,nofollow">
+    <meta name="referrer" content="no-referrer">
+    <title>#{$config.shop_name} - 安全验证</title>
+    <style>
+        :root {
+            --cap-page-bg: #eef2ff;
+            --cap-page-bg-deep: #e0f2fe;
+            --cap-surface: rgba(255, 255, 255, .90);
+            --cap-border: rgba(30, 41, 59, .10);
+            --cap-text: #0f172a;
+            --cap-muted: #64748b;
+            --cap-accent: #4f46e5;
+            --cap-accent-2: #0891b2;
+            --cap-success: #059669;
+            --cap-danger: #dc2626;
+        }
+
+        * { box-sizing: border-box; }
+        html, body { min-height: 100%; }
+        body {
+            margin: 0;
+            display: grid;
+            place-items: center;
+            padding: max(20px, env(safe-area-inset-top)) 20px max(20px, env(safe-area-inset-bottom));
+            background:
+                radial-gradient(circle at 15% 15%, rgba(99, 102, 241, .18), transparent 35%),
+                radial-gradient(circle at 85% 75%, rgba(6, 182, 212, .16), transparent 34%),
+                linear-gradient(135deg, var(--cap-page-bg), var(--cap-page-bg-deep));
+            color: var(--cap-text);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Microsoft YaHei", sans-serif;
+            -webkit-font-smoothing: antialiased;
+        }
+
+        .cap-page-card {
+            width: min(460px, 100%);
+            padding: 38px 34px 26px;
+            text-align: center;
+            background: var(--cap-surface);
+            border: 1px solid var(--cap-border);
+            border-radius: 24px;
+            box-shadow: 0 24px 70px rgba(15, 23, 42, .16);
+            backdrop-filter: blur(20px);
+        }
+
+        .cap-page-mark {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 18px;
+            display: grid;
+            place-items: center;
+            border: 1px solid rgba(79, 70, 229, .20);
+            border-radius: 19px;
+            background: linear-gradient(145deg, rgba(79, 70, 229, .15), rgba(8, 145, 178, .12));
+            color: var(--cap-accent);
+            font-size: 22px;
+            font-weight: 800;
+            letter-spacing: .08em;
+        }
+
+        h1 { margin: 0; font-size: 21px; line-height: 1.45; font-weight: 700; }
+        .cap-page-desc { margin: 10px 0 0; color: var(--cap-muted); font-size: 14px; line-height: 1.75; }
+        .cap-widget-wrap { display: flex; justify-content: center; min-height: 60px; margin: 25px 0 10px; }
+        #cap-widget { --cap-widget-width: 280px; --cap-widget-height: 58px; }
+        .cap-status { min-height: 24px; margin: 0; color: var(--cap-muted); font-size: 13px; line-height: 1.8; }
+        body[data-state="done"] .cap-status { color: var(--cap-success); }
+        body[data-state="error"] .cap-status { color: var(--cap-danger); }
+        .cap-foot { margin: 22px 0 0; padding-top: 15px; border-top: 1px solid var(--cap-border); color: #94a3b8; font-size: 12px; }
+
+        @media (max-width: 420px) {
+            .cap-page-card { padding: 30px 20px 22px; border-radius: 20px; }
+            h1 { font-size: 19px; }
+            .cap-page-desc { font-size: 13.5px; }
+        }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+        }
+    </style>
+</head>
+<body data-state="loading">
+<main class="cap-page-card" role="main">
+    <div class="cap-page-mark" aria-hidden="true">CAP</div>
+    <h1>#{$config.shop_name}</h1>
+    <p class="cap-page-desc">继续访问前, 请完成一次人机验证。</p>
+
+    <div class="cap-widget-wrap">
+        <cap-widget id="cap-widget" required
+                    data-cap-api-endpoint="{$endpoint}"
+                    data-cap-hidden-field-name="cap-token"
+                    data-cap-disable-haptics
+                    data-cap-i18n-initial-state="请确认你是真人"
+                    data-cap-i18n-verifying-label="正在验证..."
+                    data-cap-i18n-solved-label="验证通过"
+                    data-cap-i18n-error-label="验证失败, 请重试"
+                    data-cap-i18n-required-label="请确认你是真人"
+                    data-cap-i18n-verify-aria-label="点击确认你是真人"
+                    data-cap-i18n-verifying-aria-label="正在验证你是真人, 请稍候"
+                    data-cap-i18n-verified-aria-label="验证通过, 可以继续访问"
+                    data-cap-i18n-error-aria-label="验证失败, 请重试"></cap-widget>
+    </div>
+    <p class="cap-status" id="cap-status" role="status" aria-live="polite">正在加载验证组件...</p>
+    <p class="cap-foot">安全验证由自托管 Cap 提供</p>
+</main>
+
+<script id="cap-widget-script" src="{$widgetScript}" defer{$nonceAttr}></script>
+<script{$nonceAttr}>
+    (function () {
+        var endpoint = {$endpointJson};
+        var wasmUrl = {$wasmUrlJson};
+        var nonce = {$nonceJson};
+        if (nonce) {
+            window.CAP_CSS_NONCE = nonce;
+            window.CAP_SCRIPT_NONCE = nonce;
+        }
+        if (wasmUrl) {
+            window.CAP_CUSTOM_WASM_URL = wasmUrl;
+        }
+
+        var widget = document.getElementById("cap-widget");
+        var widgetScript = document.getElementById("cap-widget-script");
+        var status = document.getElementById("cap-status");
+        var setState = function (state, text) {
+            document.body.setAttribute("data-state", state);
+            status.textContent = text;
+        };
+
+        if (!widget) {
+            setState("error", "验证组件初始化失败, 请刷新页面重试");
+            return;
+        }
+
+        if (widgetScript) {
+            widgetScript.addEventListener("error", function () {
+                setState("error", "验证组件加载失败, 请检查网络后刷新页面");
+            });
+        }
+
+        widget.addEventListener("solve", function (event) {
+            var token = event && event.detail ? event.detail.token : "";
+            if (!token) {
+                setState("error", "验证数据缺失, 请刷新页面重试");
+                return;
+            }
+            setState("verifying", "正在校验, 请稍候...");
+            var xhr = new XMLHttpRequest();
+            xhr.open("POST", "/plugin/Capcaptcha/api/verify", true);
+            xhr.setRequestHeader("Content-Type", "application/x-www-form-urlencoded; charset=UTF-8");
+            xhr.onreadystatechange = function () {
+                if (xhr.readyState !== 4) return;
+                var result = null;
+                try { result = JSON.parse(xhr.responseText); } catch (e) {}
+                if (xhr.status === 200 && result && result.code === 200) {
+                    setState("done", "验证通过, 正在进入...");
+                    setTimeout(function () { window.location.reload(); }, 520);
+                } else {
+                    setState("error", result && result.msg ? result.msg : "验证未通过, 请重试");
+                    try { widget.reset(); } catch (e) {}
+                }
+            };
+            xhr.send("token=" + encodeURIComponent(token));
+        });
+
+        widget.addEventListener("progress", function () {
+            setState("verifying", "正在完成验证...");
+        });
+        widget.addEventListener("error", function (event) {
+            var detail = event && event.detail ? event.detail : {};
+            setState("error", detail.message || "验证组件加载失败, 请检查网络后刷新页面");
+        });
+        widget.addEventListener("reset", function () {
+            if (document.body.getAttribute("data-state") !== "done") {
+                setState("ready", "请完成人机验证");
+            }
+        });
+
+        if (window.customElements && window.customElements.whenDefined) {
+            window.customElements.whenDefined("cap-widget").then(function () {
+                setState("ready", "请完成人机验证");
+            }, function () {
+                setState("error", "验证组件加载失败, 请刷新页面重试");
+            });
+        }
+    })();
+</script>
+</body>
+</html>
