@@ -5,7 +5,7 @@ namespace App\Plugin\Capcaptcha\Controller;
 
 use App\Controller\Base\API\UserPlugin;
 use App\Plugin\Capcaptcha\Core\Keys;
-use App\Plugin\Capcaptcha\Hook\Main;
+use App\Plugin\Capcaptcha\Core\Verifier;
 use Kernel\Exception\JSONException;
 use Kernel\Util\Session;
 
@@ -18,7 +18,7 @@ class Api extends UserPlugin
      */
     public function verify(): array
     {
-        $token = Main::tokenFromRequest('token');
+        $token = Verifier::tokenFromRequest('token');
         if ($token === '') {
             throw new JSONException('验证数据缺失, 请刷新页面重试');
         }
@@ -28,11 +28,11 @@ class Api extends UserPlugin
             throw new JSONException('本站尚未配置 Cap 密钥, 请联系站长在插件配置中补充');
         }
 
-        if (!Main::siteverify($entry, $token)) {
+        if (!Verifier::siteverify($entry, $token)) {
             throw new JSONException('人机验证未通过, 请重试');
         }
 
-        Session::set(Main::GATE_SESSION, time());
+        Session::set(Verifier::GATE_SESSION, time());
         return $this->json(200, 'success');
     }
 }

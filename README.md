@@ -25,6 +25,7 @@
 - `Capcaptcha/Config/Config.php`: 默认配置.
 - `Capcaptcha/Config/Submit.js`: 后台配置表单.
 - `Capcaptcha/Core/Keys.php`: 配置解析和 Cap endpoint 构造.
+- `Capcaptcha/Core/Verifier.php`: token 提取、Cap `/siteverify` 请求和熔断降级状态管理.
 - `Capcaptcha/Hook/Main.php`: 生命周期, 全站拦截, 接口守卫, 页面注入和 CSP.
 - `Capcaptcha/Controller/Api.php`: 全站拦截页的验证路由.
 - `Capcaptcha/View/challenge.html`: 全站验证页面.
@@ -105,7 +106,7 @@ ACG Faka 使用按场景配置的原生验证码开关. 除始终受保护的邮
 - Cap `/siteverify` 使用 JSON 请求体, 只提交 `secret` 和 `response`.
 - Cap token 由 Cap 服务端按一次性凭据处理, 插件不缓存和复用 token.
 - Cap 标准响应不提供 Turnstile 风格的 action 或 hostname 字段, 插件不会伪造这些校验.
-- Cap 服务不可达时默认 fail-closed. 连续 5 次网络失败后进入 300 秒短时降级放行, 并写入 `runtime/plugin/Capcaptcha/breaker.json`.
+- Cap 服务不可达时默认 fail-closed. 连续 5 次网络失败后固定降级放行 300 秒; 窗口内不再请求 siteverify, 非空且不超过 16 KiB 的 token 可通过. 窗口到期后的下一次请求重新探测 Cap. 状态写入 `runtime/plugin/Capcaptcha/breaker.json`.
 - 组件脚本, Cap endpoint 和 WASM endpoint 会通过 CSP hook 加入允许列表; Cap PoW worker 使用 `blob:` worker source.
 
 ## 安装和验证
@@ -117,12 +118,17 @@ ACG Faka 使用按场景配置的原生验证码开关. 除始终受保护的邮
 5. 修改 Hook 文件后停用再启用插件, 让内核重建 hook 注册表.
 6. 模板异常时只清理 `runtime/view/compile`.
 
+## 发布
+
+推送符合 `vX.Y.Z` 格式的标签 (例如 `v1.0.0`) 会触发 GitHub Actions. 工作流校验标签版本与 `Capcaptcha/Config/Info.php` 一致, 并发布 `Capcaptcha-vX.Y.Z.zip`; 压缩包只包含 `Capcaptcha/` 目录及插件静态资源.
+
 ## 本地检查
 
 ```bash
 php -l Capcaptcha/Config/Info.php
 php -l Capcaptcha/Config/Config.php
 php -l Capcaptcha/Core/Keys.php
+php -l Capcaptcha/Core/Verifier.php
 php -l Capcaptcha/Hook/Main.php
 php -l Capcaptcha/Controller/Api.php
 git diff --check

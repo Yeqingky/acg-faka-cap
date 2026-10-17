@@ -12,7 +12,8 @@ This repository contains a Capcaptcha CAPTCHA plugin for ACG Faka. The plugin mu
 - `Capcaptcha/Config/Config.php`: default plugin configuration.
 - `Capcaptcha/Config/Submit.js`: administrator configuration form.
 - `Capcaptcha/Core/Keys.php`: Cap instance, Site Key, Secret Key parsing, and endpoint construction.
-- `Capcaptcha/Hook/Main.php`: lifecycle checks, request guards, front-end injection for dynamic purchase modals, slots, CSP, and Cap verification.
+- `Capcaptcha/Core/Verifier.php`: token extraction, Cap `/siteverify` requests, and bounded outage circuit breaker.
+- `Capcaptcha/Hook/Main.php`: lifecycle checks, request guards, front-end injection for dynamic purchase modals, slots, and CSP.
 - `Capcaptcha/Controller/Api.php`: plugin verification endpoint used by the full-page gate.
 - `Capcaptcha/View/challenge.html`: full-page verification view.
 - `Capcaptcha/View/guard.js`: browser-side token acquisition and protected-request integration.
@@ -51,7 +52,7 @@ Changes to Hook annotations require disabling and re-enabling the plugin in a re
 - Keep secret keys server-side. Never put the saved Secret Key into public HTML or browser runtime configuration. The admin Secret Key editor must not prefill it, submits only a newly typed value, and preserves the existing server-side value when left empty.
 - Escape every administrator-provided value before inserting it into HTML or JavaScript.
 - Use JSON requests for Cap `/siteverify`; do not use URL-encoded `form_params`.
-- Reject missing or malformed tokens by default. Network failures remain fail-closed until the bounded circuit breaker opens.
+- Reject missing and oversized tokens. Verification fails closed until the bounded circuit breaker opens; during its fixed open window, non-empty tokens up to 16 KiB skip remote verification, and the first request after expiry probes Cap again.
 - Do not claim action or hostname validation that Cap's documented `/siteverify` response does not provide. Tokens are single-use and the plugin must not reuse them.
 - Keep route matching and configuration feature flags in one auditable place.
 - Do not add a second domain-to-key configuration layer; one Cap Site Key is the source of truth for all supported shop domains.
@@ -61,4 +62,5 @@ Changes to Hook annotations require disabling and re-enabling the plugin in a re
 - The default branch is `main`, matching the configured remote repository.
 - Do not commit `Turnstile/`, runtime files, credentials, or generated caches.
 - A release package contains `Capcaptcha/` and its required static assets only.
+- Exact `vX.Y.Z` tags trigger `.github/workflows/release.yml`, which checks the tag against the plugin metadata and publishes `Capcaptcha-vX.Y.Z.zip` containing only `Capcaptcha/`.
 - Update this file whenever the plugin layout, supported configuration, business rules, or validation workflow changes.

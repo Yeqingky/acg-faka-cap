@@ -5,7 +5,7 @@ namespace App\Plugin\Capcaptcha\Hook;
 
 use App\Controller\Base\View\UserPlugin;
 use App\Plugin\Capcaptcha\Core\Keys;
-use App\Util\Http;
+use App\Plugin\Capcaptcha\Core\Verifier;
 use Kernel\Annotation\Hook;
 use Kernel\Annotation\Plugin;
 use Kernel\Exception\JSONException;
@@ -13,23 +13,12 @@ use Kernel\Util\Session;
 
 class Main extends UserPlugin
 {
-    /** 全站拦截通过后的会话标记. */
-    public const GATE_SESSION = 'cap_gate_passed';
 
     /** 全站验证通过后的有效期, 秒. */
     public const GATE_TTL = 7200;
 
-    /** 前端提交 Cap token 的字段名, 与官方 widget 默认值一致. */
-    public const FIELD = 'cap-token';
-
     /** 生产环境默认固定的 Cap widget 版本. */
     private const DEFAULT_WIDGET_URL = 'https://cdn.jsdelivr.net/npm/@cap.js/widget@0.1.57';
-
-    /** 连续不可达多少次后进入短时降级放行. */
-    private const BREAKER_THRESHOLD = 5;
-
-    /** 熔断打开后的降级时长, 秒. */
-    private const BREAKER_OPEN_SECONDS = 300;
 
     /**
      * 受保护接口清单. 场景守卫由插件独立开关控制; 邮箱和手机绑定接口保持始终保护.
@@ -99,7 +88,7 @@ class Main extends UserPlugin
             return;
         }
 
-        $passedAt = (int)Session::get(self::GATE_SESSION);
+        $passedAt = (int)Session::get(Verifier::GATE_SESSION);
         if ($passedAt > 0 && (time() - $passedAt) < self::GATE_TTL) {
             return;
         }
@@ -163,8 +152,8 @@ class Main extends UserPlugin
         }
 
         $entry = Keys::resolve();
-        $token = self::tokenFromRequest();
-        if ($entry === null || $token === '' || !self::siteverify($entry, $token)) {
+        $token = Verifier::tokenFromRequest();
+        if ($entry === null || $token === '' || !Verifier::siteverify($entry, $token)) {
             throw new JSONException('请完成人机验证后再提交, 如页面未出现验证组件请刷新重试');
         }
         self::satisfyNativeCaptcha($controller, $guard);
@@ -340,71 +329,6 @@ class Main extends UserPlugin
         $sources['worker-src'] = array_values(array_unique(array_merge((array)($sources['worker-src'] ?? []), ['blob:'])));
     }
 
-    /**
-     * 从 POST 或 JSON body 读取 token. tokenField 仅供全站验证接口使用.
-     */
-    public static function tokenFromRequest(string $tokenField = self::FIELD): string
-    {
-        $token = (string)($_POST[$tokenField] ?? '');
-        if ($token !== '') {
-            return $token;
-        }
-
-        $raw = (string)file_get_contents('php://input');
-        if ($raw === '' || !str_starts_with(ltrim($raw), '{')) {
-            return '';
-        }
-
-        $json = json_decode($raw, true);
-        return is_array($json) ? (string)($json[$tokenField] ?? '') : '';
-    }
-
-    /**
-     * 调用 Cap 的 reCAPTCHA 兼容 /siteverify 接口.
-     *
-     * Cap 文档规定请求体是 JSON, 只发送 Secret Key 和 response token.
-     * 成功后的 token 由 Cap 服务端按一次性凭据处理, 插件不会缓存或复用.
-     *
-     * @param array{endpoint:string, site_key:string, secret_key:string} $entry
-     */
-    public static function siteverify(array $entry, string $token): bool
-    {
-        $secret = trim((string)($entry['secret_key'] ?? ''));
-        $verifyEndpoint = Keys::verifyEndpointFor($entry);
-        if ($secret === '' || $verifyEndpoint === '' || $token === '' || strlen($token) > 16384) {
-            return false;
-        }
-
-        $breakerOpen = self::breakerOpen();
-        try {
-            $response = Http::make([
-                'verify' => true,
-                'timeout' => $breakerOpen ? 3 : 10,
-                'http_errors' => false,
-            ])->post($verifyEndpoint, [
-                'headers' => [
-                    'Accept' => 'application/json',
-                    'Content-Type' => 'application/json',
-                ],
-                'json' => [
-                    'secret' => $secret,
-                    'response' => $token,
-                ],
-            ]);
-
-            $body = json_decode((string)$response->getBody(), true);
-            if (!is_array($body)) {
-                return self::breakerTrip();
-            }
-
-            // 收到 Cap 的明确 JSON 答复, 说明链路恢复. success=false 仍然拒绝当前请求.
-            self::breakerReset();
-            return ($body['success'] ?? false) === true;
-        } catch (\Throwable $e) {
-            // 网络故障默认拒绝, 连续故障后短时降级, 避免单次网络抖动锁死所有管理员.
-            return self::breakerTrip();
-        }
-    }
 
     /**
      * @param array<string, mixed> $config
@@ -508,69 +432,6 @@ class Main extends UserPlugin
             $support = $helper !== false && str_contains($helper, 'acg-widget-custom');
         }
         return $support;
-    }
-
-    private static function breakerFile(): string
-    {
-        return BASE_PATH . '/runtime/plugin/Capcaptcha/breaker.json';
-    }
-
-    private static function breakerOpen(): bool
-    {
-        $state = self::breakerRead();
-        return ($state['open_until'] ?? 0) > time();
-    }
-
-    /**
-     * @return array{fails:int, open_until:int}
-     */
-    private static function breakerRead(): array
-    {
-        $raw = @file_get_contents(self::breakerFile());
-        $state = $raw === false ? [] : (array)json_decode((string)$raw, true);
-        return [
-            'fails' => (int)($state['fails'] ?? 0),
-            'open_until' => (int)($state['open_until'] ?? 0),
-        ];
-    }
-
-    /**
-     * @param array{fails:int, open_until:int} $state
-     */
-    private static function breakerWrite(array $state): void
-    {
-        $dir = dirname(self::breakerFile());
-        if (!is_dir($dir)) {
-            @mkdir($dir, 0777, true);
-        }
-        @file_put_contents(self::breakerFile(), json_encode($state));
-    }
-
-    private static function breakerTrip(): bool
-    {
-        $state = self::breakerRead();
-        if ($state['open_until'] > time()) {
-            self::breakerWrite(['fails' => $state['fails'], 'open_until' => time() + self::BREAKER_OPEN_SECONDS]);
-            return true;
-        }
-
-        $fails = $state['fails'] + 1;
-        if ($fails >= self::BREAKER_THRESHOLD) {
-            @error_log('[Cap] 连续 ' . $fails . ' 次无法连接 Cap siteverify, 已进入降级放行 ' . self::BREAKER_OPEN_SECONDS . ' 秒, 请检查服务器出站网络');
-            self::breakerWrite(['fails' => $fails, 'open_until' => time() + self::BREAKER_OPEN_SECONDS]);
-            return true;
-        }
-
-        self::breakerWrite(['fails' => $fails, 'open_until' => 0]);
-        return false;
-    }
-
-    private static function breakerReset(): void
-    {
-        $state = self::breakerRead();
-        if ($state['fails'] !== 0 || $state['open_until'] !== 0) {
-            self::breakerWrite(['fails' => 0, 'open_until' => 0]);
-        }
     }
 
     /**
